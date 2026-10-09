@@ -287,17 +287,27 @@ function dataPartToAiSdkPart(part: vscode.LanguageModelDataPart): any | undefine
 		return undefined;
 	}
 
-	if (part.mimeType.startsWith('text/')) {
+	// mimeType is required by the API but defensively handled: Copilot has been
+	// observed sending parts without one, and the startsWith checks below (plus
+	// the AI SDK's own mediaType.startsWith) would throw on undefined. Without
+	// a real type the only safe representation is text — a file part with a
+	// guessed media type is rejected by provider capabilities.
+	const mimeType = typeof part.mimeType === 'string' && part.mimeType ? part.mimeType : undefined;
+	if (mimeType === undefined) {
 		return { type: 'text', text: new TextDecoder('utf-8').decode(part.data) };
 	}
 
-	if (part.mimeType.startsWith('image/')) {
-		// AI SDK accepts Buffer/Uint8Array.
-		return { type: 'image', image: Buffer.from(part.data), mimeType: part.mimeType };
+	if (mimeType.startsWith('text/')) {
+		return { type: 'text', text: new TextDecoder('utf-8').decode(part.data) };
 	}
 
-	// Fallback: represent as a file.
-	return { type: 'file', data: Buffer.from(part.data), mimeType: part.mimeType };
+	if (mimeType.startsWith('image/')) {
+		// AI SDK accepts Buffer/Uint8Array.
+		return { type: 'image', image: Buffer.from(part.data), mediaType: mimeType };
+	}
+
+	// Fallback: represent as a file (mediaType is required by the AI SDK schema).
+	return { type: 'file', data: Buffer.from(part.data), mediaType: mimeType };
 }
 
 function languageModelToolResultContentToOutput(
@@ -322,18 +332,27 @@ function languageModelToolResultContentToOutput(
 			if (part.mimeType === 'cache_control') {
 				continue;
 			}
-			if (part.mimeType.startsWith('text/')) {
+			// See dataPartToAiSdkPart: mimeType may be missing; fall back to text
+			// so the startsWith checks below cannot throw on undefined.
+			const dataMime = typeof part.mimeType === 'string' && part.mimeType ? part.mimeType : undefined;
+			if (dataMime === undefined) {
 				const text = new TextDecoder('utf-8').decode(part.data);
-				textChunks.push(text);
-				parts.push({ type: 'text', text });
-				continue;
+			textChunks.push(text);
+			parts.push({ type: 'text', text });
+			continue;
+			}
+			if (dataMime.startsWith('text/')) {
+				const text = new TextDecoder('utf-8').decode(part.data);
+			textChunks.push(text);
+			parts.push({ type: 'text', text });
+			continue;
 			}
 			const base64 = Buffer.from(part.data).toString('base64');
-			if (part.mimeType.startsWith('image/')) {
-				parts.push({ type: 'image-data', data: base64, mediaType: part.mimeType });
+			if (dataMime.startsWith('image/')) {
+				parts.push({ type: 'image-data', data: base64, mediaType: dataMime });
 				continue;
 			}
-			parts.push({ type: 'file-data', data: base64, mediaType: part.mimeType });
+			parts.push({ type: 'file-data', data: base64, mediaType: dataMime });
 			continue;
 		}
 

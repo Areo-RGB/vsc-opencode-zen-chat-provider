@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## UNRELEASED [x.x.x] - xxxx-xx-xx
 
+## [0.1.6] - 2026-10-09
+
+### Fixed
+
+- Fix `Cannot read properties of undefined (reading 'startsWith')` crash when
+  chat parts arrive without a `mimeType`: fall back to text instead of throwing.
+- Send file/image data parts with the AI SDK's `mediaType` key (was `mimeType`,
+  which fails request validation for file parts).
+
 ## [0.1.5] - 2026-10-09
 
 ### Fixed
