@@ -3,8 +3,17 @@ import { jsonSchema } from 'ai';
 import * as vscode from 'vscode';
 import { getApiKey } from './secrets';
 import { ModelRegistry } from './modelRegistry';
-import { OPENAI_COMPAT_PROVIDER_NAME, streamZen } from './zenClient';
+import { OPENAI_COMPAT_PROVIDER_NAME, streamZen, type ToolMode } from './zenClient';
 import { getOutputChannel } from './output';
+import {
+	OPENCODE_CLIENT,
+	OPENCODE_USER_AGENT,
+	STUB_DESCRIPTION,
+	STUB_PARAMETERS,
+	ZEN_MIN_TOOL_NAMES,
+	ZEN_REQUIRED_TOOL_NAMES,
+	canonicalizeSessionId,
+} from './zenFreeTierHeaders';
 
 export const VENDOR_ID = 'opencode';
 
@@ -67,7 +76,10 @@ export class OpenCodeZenChatProvider implements vscode.LanguageModelChatProvider
 		const requestModelId = providerInfo?.originalModelId ?? model.id;
 		const requestMeta = await getOrCreateRequestMetadata(this.context, options);
 		const toolNameMap = buildToolNameMap(options.tools, providerInfo?.npm);
-		const tools = options.tools ? toolsToAiSdkTools(options.tools, toolNameMap.toProvider) : undefined;
+		const tools = ensureZenCoreTools(
+			options.tools ? toolsToAiSdkTools(options.tools, toolNameMap.toProvider) : undefined,
+			requestToolMode
+		);
 		const coreMessages = messagesToAiSdkMessages(messages, toolNameMap.toProvider);
 		const promptCaching = getPromptCachingConfig();
 		const promptCacheKey =
@@ -489,13 +501,61 @@ function buildRequestHeaders(
 	meta: RequestMetadata,
 	modelHeaders: Record<string, string> | undefined
 ): Record<string, string> {
-	return {
+	const headers: Record<string, string> = {
 		'x-opencode-project': meta.projectId,
-		'x-opencode-session': meta.sessionId,
+		'x-opencode-session': canonicalizeSessionId(meta.sessionId),
 		'x-opencode-request': meta.requestId,
-		'x-opencode-client': meta.client,
+		'x-opencode-client': OPENCODE_CLIENT,
+		'user-agent': OPENCODE_USER_AGENT,
 		...(modelHeaders ?? {}),
 	};
+	// The free-tier gateway validates these headers; per-model overrides from
+	// models.dev must not break them. The zen fetch wrapper re-asserts the same
+	// set on the wire as a backstop.
+	headers['x-opencode-session'] = canonicalizeSessionId(headers['x-opencode-session']);
+	if (!headers['user-agent']?.startsWith('claude-cli/')) {
+		headers['user-agent'] = OPENCODE_USER_AGENT;
+	}
+	if (!headers['x-opencode-client']) {
+		headers['x-opencode-client'] = OPENCODE_CLIENT;
+	}
+	return headers;
+}
+
+// The free-tier gateway counts core OpenCode tool NAMES in the request body
+// and requires at least ZEN_MIN_TOOL_NAMES of them; VS Code tools have
+// unrelated names, so stub the missing core names. The stubs are never
+// registered with VS Code, so a model call to one errors and the model
+// recovers. Skipped for forced tool choice, where a stub would be invoked
+// for sure. The zen fetch wrapper repeats the injection on string bodies as
+// a backstop (e.g. tool-less chats whose body otherwise carries no tools).
+function ensureZenCoreTools(
+	tools: Record<string, any> | undefined,
+	toolMode: ToolMode
+): Record<string, any> | undefined {
+	if (toolMode === 'required' || process.env.ZEN_INJECT_TOOLS === '0') {
+		return tools;
+	}
+	const out = { ...(tools ?? {}) };
+	const present = ZEN_REQUIRED_TOOL_NAMES.filter((n) => out[n] !== undefined).length;
+	if (present >= ZEN_MIN_TOOL_NAMES) {
+		return tools;
+	}
+	let added = 0;
+	for (const name of ZEN_REQUIRED_TOOL_NAMES) {
+		if (out[name] !== undefined) {
+			continue;
+		}
+		out[name] = {
+			description: STUB_DESCRIPTION,
+			inputSchema: jsonSchema(STUB_PARAMETERS as any),
+		};
+		added++;
+		if (present + added >= ZEN_MIN_TOOL_NAMES) {
+			break;
+		}
+	}
+	return out;
 }
 
 function buildAnthropicCacheControl(ttl: '5m' | '1h' | 'none'): { type: 'ephemeral'; ttl?: '5m' | '1h' } {

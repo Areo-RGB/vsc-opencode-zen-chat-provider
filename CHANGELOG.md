@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## UNRELEASED [x.x.x] - xxxx-xx-xx
 
+## [0.1.5] - 2026-10-09
+
+### Fixed
+
+- Send free-tier gateway headers (`User-Agent: opencode/1.18.31`, canonical
+  `ses_` session id, `x-opencode-client: desktop`) and transparently rewrite
+  legacy `/zen/` URLs to `/inference/openai/` (fixes 403/429 on free accounts).
+- Inject `bash` + `read` tool-name stubs when the request body lacks enough
+  core OpenCode tool names for gateway validation (skipped for forced tool choice).
+
 ## [0.1.3] - 2026-01-27
 
 ### Fixed

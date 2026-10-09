@@ -4,8 +4,13 @@ import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { createOpenAI } from '@ai-sdk/openai';
 import { streamText, type ModelMessage } from 'ai';
 import { getOutputChannel } from './output';
+import { createZenFetch } from './zenFreeTierHeaders';
 
-export const ZEN_BASE_URL = 'https://opencode.ai/zen/v1';
+// Canonical free-tier endpoint. Models.dev still advertises the legacy
+// `https://opencode.ai/zen/v1` path (served via ModelRegistry), which the
+// zen fetch wrapper below transparently rewrites — the legacy path is
+// rate-limited (429 FreeUsageLimitError) on free accounts.
+export const ZEN_BASE_URL = 'https://opencode.ai/inference/openai/v1';
 
 export type ToolMode = 'auto' | 'required';
 
@@ -232,19 +237,19 @@ function createProvider(
 			return createAnthropic({
 				apiKey,
 				baseURL,
-				fetch: debugLogging ? createDebugFetch() : undefined,
+				fetch: createZenFetch(debugLogging ? createDebugFetch() : undefined),
 			}) as any;
 		case '@ai-sdk/openai':
 			return createOpenAI({
 				apiKey,
 				baseURL,
-				fetch: debugLogging ? createDebugFetch() : undefined,
+				fetch: createZenFetch(debugLogging ? createDebugFetch() : undefined),
 			}) as any;
 		case '@ai-sdk/google':
 			return createGoogleGenerativeAI({
 				apiKey,
 				baseURL,
-				fetch: debugLogging ? createDebugFetch() : undefined,
+				fetch: createZenFetch(debugLogging ? createDebugFetch() : undefined),
 			}) as any;
 		case '@ai-sdk/openai-compatible':
 		default:
@@ -252,7 +257,7 @@ function createProvider(
 				name: OPENAI_COMPAT_PROVIDER_NAME,
 				apiKey,
 				baseURL,
-				fetch: debugLogging ? createDebugFetch() : undefined,
+				fetch: createZenFetch(debugLogging ? createDebugFetch() : undefined),
 				includeUsage,
 				transformRequestBody: (args) => applyOpenAICompatibleCaching(args),
 			});

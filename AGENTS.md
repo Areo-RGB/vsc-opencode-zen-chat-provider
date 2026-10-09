@@ -91,7 +91,7 @@ npm run lint
 ### API Communication
 
 - Use vercel `ai-sdk` for API Requests to the models. (which sdk should be used is defined per model by models.dev)
-- Base URL: `https://opencode.ai/zen/v1`
+- Base URL: `https://opencode.ai/inference/openai/v1` (canonical free-tier endpoint; legacy `/zen/` URLs from models.dev are rewritten transparently at fetch time)
 - Fetch model list from `https://models.dev/api.json`
 - Cache model metadata with configurable TTL (default 15 minutes)
 
